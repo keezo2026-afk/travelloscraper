@@ -37,20 +37,16 @@ API: http://localhost:8000/docs (optional local Python). The Next.js app also ho
 
 ## Deploy on Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/keezo2026-afk/travelloscraper&root-directory=frontend&env=SEARCH_API_KEY&env=SEARCH_PROVIDER&envDescription=Search%20API%20key%20and%20provider%20(serpapi%2C%20google_cse%2C%20brave%2C%20or%20bing)&project-name=travello-lead-finder&repository-name=travelloscraper)
+https://travelloscraper.vercel.app currently 404s if Vercel is building **main** (that branch has no app). Production branch must be `arena/01a0430e-travelloscraper`.
 
-Or import the existing repo:
+In the Vercel project:
 
-1. Open [Import keezo2026-afk/travelloscraper](https://vercel.com/new/import?s=https://github.com/keezo2026-afk/travelloscraper).
-2. Set **Root Directory** to `frontend` (required).
-3. Framework Preset: **Next.js**.
-4. Environment variables:
-   - `SEARCH_PROVIDER` — `serpapi` (or `google_cse` / `brave` / `bing`)
-   - `SEARCH_API_KEY` — your key (server-side only, never `NEXT_PUBLIC_`)
-   - `GOOGLE_CSE_ID` — only for Google CSE
-5. Deploy. After the first deploy, Vercel will rebuild on git push.
+1. **Settings → Git → Production Branch** → `arena/01a0430e-travelloscraper`
+2. **Settings → General → Root Directory** → leave **empty** (Next.js is at the repo root). If you previously set `frontend`, clear it.
+3. **Settings → Environment Variables**: `SEARCH_PROVIDER`, `SEARCH_API_KEY`
+4. **Deployments → Redeploy** the latest commit on that branch (Production).
 
-This Arena sandbox cannot complete Vercel login (outbound TLS to api.vercel.com is blocked), so the GitHub ↔ Vercel connection has to be done in your browser.
+Framework: Next.js. Do not use `NEXT_PUBLIC_` on the API key.
 
 On Vercel, each search query runs as a serverless function (keep the Search or Dashboard tab open while a campaign is **Running** so the UI can tick the queue). Filesystem storage is ephemeral — **export CSV** to keep leads. For durable storage locally, keep using SQLite via `START.bat`.
 
