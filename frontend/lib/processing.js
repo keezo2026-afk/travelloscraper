@@ -120,7 +120,6 @@ export function flagsFor(lead) {
 }
 
 export function generateQueries({ industries = [], provinces = [], cities = [], templates, custom_keywords = [], expand = true, custom_location }) {
-  const { DEFAULT_TEMPLATES, KEYWORD_EXPANSIONS, PROVINCES, CITIES } = require("./geo");
   const tmpls = templates?.length ? templates : DEFAULT_TEMPLATES;
   const keywords = [];
   for (const ind of industries) {
