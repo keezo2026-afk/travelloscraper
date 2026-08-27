@@ -42,6 +42,7 @@ export default function Dashboard() {
           <div className="k">LIVE CAMPAIGN</div>
           <p>Status: <b>{c.live.status}</b> — Query {c.live.done || 0} / {c.live.total || 0}</p>
           <p>{c.live.current_query}</p>
+          {c.live.error && <p style={{ color: "#e05a5a" }}><b>{c.live.status === "Failed" ? "Search stopped:" : "Search error:"}</b> {c.live.error}</p>}
           <div className="progress"><div style={{ width: `${((c.live.done || 0) / Math.max(c.live.total || 1, 1)) * 100}%` }} /></div>
         </div>
       )}

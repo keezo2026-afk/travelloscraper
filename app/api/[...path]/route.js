@@ -58,6 +58,16 @@ async function bodyOf(req) {
   try { return await req.json(); } catch { return {}; }
 }
 
+function resetFailedQueries(store, campaignId) {
+  for (const query of store.queries) {
+    if (query.campaign_id === campaignId && query.status === "failed") {
+      query.status = "retry";
+      query.attempts = 0;
+      query.error_message = null;
+    }
+  }
+}
+
 export async function GET(req, ctx) {
   const p = parts(req, ctx);
   const key = p.join("/");
@@ -173,6 +183,7 @@ export async function GET(req, ctx) {
       LOGGING_ENABLED: s.settings.LOGGING_ENABLED || "true",
       provider: providerStatus(),
       api_key_configured: Boolean(process.env.SEARCH_API_KEY || process.env.BRAVE_API_KEY || process.env.BING_API_KEY),
+      google_cse_id_configured: Boolean(process.env.GOOGLE_CSE_ID),
     });
   }
   if (key === "backups") return json([]);
@@ -211,6 +222,7 @@ export async function POST(req, ctx) {
     const id = Number(p[1]);
     const camp = s.campaigns.find((c) => c.id === id);
     if (!camp) return json({ detail: "Not found" }, 404);
+    resetFailedQueries(s, id);
     camp.status = "Running";
     camp.started_at = camp.started_at || nowIso();
     camp.updated_at = nowIso();
@@ -230,7 +242,12 @@ export async function POST(req, ctx) {
   if (p[0] === "campaigns" && p[2] === "resume") {
     const id = Number(p[1]);
     const camp = s.campaigns.find((c) => c.id === id);
-    if (camp) { camp.status = "Running"; camp.updated_at = nowIso(); }
+    if (camp) {
+      resetFailedQueries(s, id);
+      camp.status = "Running";
+      camp.error_message = null;
+      camp.updated_at = nowIso();
+    }
     s.live = { campaign_id: id, status: "Running" };
     saveStore();
     const live = await tickCampaign(id);
@@ -287,8 +304,9 @@ export async function POST(req, ctx) {
   if (key === "logs/clear") { s.logs = []; saveStore(); return json({ ok: true }); }
   if (key === "settings") {
     Object.assign(s.settings, body);
-    if (body.SEARCH_PROVIDER) process.env.SEARCH_PROVIDER = String(body.SEARCH_PROVIDER);
-    if (body.SEARCH_API_KEY) process.env.SEARCH_API_KEY = String(body.SEARCH_API_KEY);
+    for (const keyName of ["SEARCH_PROVIDER", "SEARCH_API_KEY", "GOOGLE_CSE_ID", "BRAVE_API_KEY", "BING_API_KEY"]) {
+      if (body[keyName]) process.env[keyName] = String(body[keyName]);
+    }
     saveStore();
     return json({ ok: true });
   }

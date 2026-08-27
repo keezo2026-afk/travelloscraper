@@ -152,6 +152,12 @@ export default function SearchPage() {
           <p>Query {live.done || 0} / {live.total || 0}</p>
           <p>Current: {live.current_query || "—"}</p>
           <p>Results {live.results ?? 0} · Facebook {live.facebook ?? 0} · New {live.new_leads ?? 0} · Duplicates {live.duplicates ?? 0}</p>
+          {live.error && (
+            <p style={{ color: "#e05a5a", maxWidth: 900 }}>
+              <b>{live.status === "Failed" ? "Search stopped:" : "Search error:"}</b> {live.error}
+              {live.status === "Failed" && " Update the provider settings, then resume the campaign."}
+            </p>
+          )}
           <div className="progress"><div style={{ width: `${pct}%` }} /></div>
         </div>
       )}

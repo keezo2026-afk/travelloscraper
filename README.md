@@ -61,7 +61,11 @@ Configure in `.env` or **Settings → Search Provider**:
 | `brave` | `BRAVE_API_KEY` or `SEARCH_API_KEY` |
 | `bing` | `BING_API_KEY` or `SEARCH_API_KEY` |
 
-API keys stay on the Python server. They are never shipped to frontend JavaScript.
+API keys stay on the server. They are never shipped to frontend JavaScript.
+
+### Google CSE 403 errors
+
+A Google CSE `403` is an authorization or quota response, not a Facebook-result problem. The app now records Google's response reason (for example `accessNotConfigured`, `forbidden`, or `dailyLimitExceeded`) and stops the campaign instead of retrying the same blocked request forever. In Google Cloud, enable the **Custom Search API** for the project that owns the key, check its quota, and make sure the key's application/API restrictions allow the server-side Custom Search request. Also verify that `GOOGLE_CSE_ID` is the ID of the Programmable Search Engine being used. After correcting the settings, resume the failed campaign or select another configured provider.
 
 ## Architecture
 

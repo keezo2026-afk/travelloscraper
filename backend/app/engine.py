@@ -134,13 +134,16 @@ def process_result(conn, campaign_id: int, query_id: int, query_text: str, item:
     return {"facebook": True, "new": is_new, "dup": not is_new}
 
 
-def run_one_query(campaign_id: int, qrow, exclusions: list[str], num: int, retries: int, delay_ms: int):
-    provider = get_provider()
+def run_one_query(campaign_id: int, qrow, exclusions: list[str], num: int, retries: int, delay_ms: int) -> bool:
     query_text = qrow["query_text"]
     query_id = qrow["id"]
     last_err = None
-    for attempt in range(1, retries + 1):
+    last_retryable = True
+    attempts = 0
+    for attempt in range(1, max(1, retries) + 1):
+        attempts = attempt
         try:
+            provider = get_provider()
             log_event(f"Query {query_text} (attempt {attempt})")
             results = provider.search(query_text, num=num)
             fb = new = dup = 0
@@ -157,13 +160,12 @@ def run_one_query(campaign_id: int, qrow, exclusions: list[str], num: int, retri
                     """UPDATE queries SET status='completed', attempts=?, results_count=?, facebook_count=?, new_leads=?, duplicates=?, last_run_at=?, error_message=NULL WHERE id=?""",
                     (attempt, len(results), fb, new, dup, now_iso(), query_id),
                 )
-                pass
             with db() as conn:
                 pos = conn.execute("SELECT position FROM queries WHERE id=?", (query_id,)).fetchone()["position"]
                 conn.execute(
                     """UPDATE campaigns SET completed_queries=(SELECT COUNT(*) FROM queries WHERE campaign_id=? AND status='completed'),
                        last_query_index=?, results_found=results_found+?, facebook_found=facebook_found+?,
-                       new_leads=new_leads+?, duplicates=duplicates+?, updated_at=? WHERE id=?""",
+                       new_leads=new_leads+?, duplicates=duplicates+?, updated_at=?, error_message=NULL WHERE id=?""",
                     (campaign_id, pos, len(results), fb, new, dup, now_iso(), campaign_id),
                 )
             _live.update({
@@ -172,26 +174,40 @@ def run_one_query(campaign_id: int, qrow, exclusions: list[str], num: int, retri
                 "facebook": fb,
                 "new_leads": new,
                 "duplicates": dup,
+                "error": None,
             })
             log_event(f"{len(results)} results, {fb} Facebook URLs, {new} new leads, {dup} duplicates")
             time.sleep(delay_ms / 1000.0)
-            return
+            return True
         except SearchError as e:
             last_err = str(e)
+            last_retryable = e.retryable
             log_event(last_err, "ERROR")
             if not e.retryable:
                 break
             time.sleep((delay_ms / 1000.0) * attempt)
         except Exception as e:
             last_err = str(e)
+            last_retryable = True
             log_event(last_err, "ERROR")
             time.sleep((delay_ms / 1000.0) * attempt)
+    message = last_err or "Search failed"
     with db() as conn:
         conn.execute(
-            "UPDATE queries SET status='retry', attempts=?, error_message=?, last_run_at=? WHERE id=?",
-            (retries, last_err, now_iso(), query_id),
+            "UPDATE queries SET status='failed', attempts=?, error_message=?, last_run_at=? WHERE id=?",
+            (attempts, message, now_iso(), query_id),
         )
-        conn.execute("UPDATE campaigns SET updated_at=? WHERE id=?", (now_iso(), campaign_id))
+        conn.execute(
+            "UPDATE campaigns SET status='Failed', error_message=?, updated_at=? WHERE id=?",
+            (message, now_iso(), campaign_id),
+        )
+    _live.update({
+        "status": "Failed",
+        "current_query": query_text,
+        "error": message,
+        "retryable": last_retryable,
+    })
+    return False
 
 
 def _loop(campaign_id: int):
@@ -224,12 +240,28 @@ def _loop(campaign_id: int):
                 done = conn.execute("SELECT COUNT(*) c FROM queries WHERE campaign_id=? AND status='completed'", (campaign_id,)).fetchone()["c"]
             _live.update({"campaign_id": campaign_id, "status": "Running", "done": done, "total": total})
             if not q:
+                failed = None
                 with db() as conn:
-                    conn.execute("UPDATE campaigns SET status='Completed', completed_at=?, updated_at=? WHERE id=?", (now_iso(), now_iso(), campaign_id))
-                log_event("Campaign completed")
-                _live["status"] = "Completed"
+                    failed = conn.execute(
+                        "SELECT error_message FROM queries WHERE campaign_id=? AND status='failed' ORDER BY position LIMIT 1",
+                        (campaign_id,),
+                    ).fetchone()
+                    if failed:
+                        conn.execute(
+                            "UPDATE campaigns SET status='Failed', error_message=?, updated_at=? WHERE id=?",
+                            (failed["error_message"], now_iso(), campaign_id),
+                        )
+                    else:
+                        conn.execute("UPDATE campaigns SET status='Completed', completed_at=?, updated_at=? WHERE id=?", (now_iso(), now_iso(), campaign_id))
+                if failed:
+                    _live.update({"status": "Failed", "error": failed["error_message"]})
+                    log_event(f"Campaign stopped: {failed['error_message']}", "ERROR")
+                else:
+                    log_event("Campaign completed")
+                    _live["status"] = "Completed"
                 break
-            run_one_query(campaign_id, q, exclusions, num, retries, delay_ms)
+            if not run_one_query(campaign_id, q, exclusions, num, retries, delay_ms):
+                break
     except Exception as e:
         with db() as conn:
             conn.execute("UPDATE campaigns SET status='Failed', error_message=?, updated_at=? WHERE id=?", (str(e), now_iso(), campaign_id))
@@ -244,6 +276,12 @@ def start_campaign(campaign_id: int):
     with _lock:
         if _runner and _runner.is_alive():
             raise RuntimeError("A campaign is already running")
+        # A failed campaign can be resumed after its provider configuration is fixed.
+        with db() as conn:
+            conn.execute(
+                "UPDATE queries SET status='retry', attempts=0, error_message=NULL WHERE campaign_id=? AND status='failed'",
+                (campaign_id,),
+            )
         _stop.clear()
         _pause.clear()
         _runner = threading.Thread(target=_loop, args=(campaign_id,), daemon=True)

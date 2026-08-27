@@ -20,6 +20,9 @@ export default function Settings() {
       DATABASE_PATH: s.DATABASE_PATH,
       LOGGING_ENABLED: s.LOGGING_ENABLED,
       SEARCH_API_KEY: s.SEARCH_API_KEY || undefined,
+      GOOGLE_CSE_ID: s.GOOGLE_CSE_ID || undefined,
+      BRAVE_API_KEY: s.BRAVE_API_KEY || undefined,
+      BING_API_KEY: s.BING_API_KEY || undefined,
     }) });
     setMsg("Saved. API keys stay on the server.");
     load();
@@ -40,8 +43,19 @@ export default function Settings() {
           <option value="brave">Brave Search</option>
           <option value="bing">Bing Web Search</option>
         </select>
-        <p>Paste API key to update .env (leave blank to keep existing)</p>
+        <p>Paste the provider key to update the server configuration (leave blank to keep existing)</p>
         <input type="password" placeholder="SEARCH_API_KEY" onChange={(e) => set("SEARCH_API_KEY", e.target.value)} />
+        {s.SEARCH_PROVIDER === "google_cse" && (
+          <>
+            <p>Google CSE ID: {s.google_cse_id_configured ? "configured" : "missing"}</p>
+            <input
+              value={s.GOOGLE_CSE_ID || ""}
+              placeholder="GOOGLE_CSE_ID (leave blank to keep existing)"
+              onChange={(e) => set("GOOGLE_CSE_ID", e.target.value)}
+            />
+            <p style={{ maxWidth: 720 }}>A Google CSE 403 usually means the Custom Search API is disabled, the daily quota is exhausted, or the API key restrictions do not allow this server. Verify the API is enabled and that this CSE ID belongs to the key.</p>
+          </>
+        )}
       </div>
       <div className="grid2" style={{ marginTop: 16 }}>
         {["SEARCH_RATE_DELAY_MS", "RESULTS_PER_QUERY", "MAX_CONCURRENT_SEARCHES", "RETRY_COUNT", "EXPORT_DIR", "DATABASE_PATH", "LOGGING_ENABLED"].map((k) => (

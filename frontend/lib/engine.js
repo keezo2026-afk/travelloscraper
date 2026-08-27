@@ -72,8 +72,14 @@ export async function tickCampaign(campaignId) {
   const s = loadStore();
   const camp = s.campaigns.find((c) => c.id === campaignId);
   if (!camp) throw new Error("Campaign not found");
-  if (camp.status === "Paused" || camp.status === "Completed") {
-    s.live = { campaign_id: campaignId, status: camp.status, done: camp.completed_queries, total: camp.total_queries };
+  if (camp.status === "Paused" || camp.status === "Completed" || camp.status === "Failed") {
+    s.live = {
+      campaign_id: campaignId,
+      status: camp.status,
+      done: camp.completed_queries,
+      total: camp.total_queries,
+      ...(camp.error_message ? { error: camp.error_message } : {}),
+    };
     saveStore();
     return s.live;
   }
@@ -81,15 +87,26 @@ export async function tickCampaign(campaignId) {
     .sort((a, b) => a.position - b.position)[0];
   const done = s.queries.filter((x) => x.campaign_id === campaignId && x.status === "completed").length;
   if (!q) {
-    camp.status = "Completed";
-    camp.completed_at = nowIso();
+    const failed = s.queries.find((x) => x.campaign_id === campaignId && x.status === "failed");
+    camp.status = failed ? "Failed" : "Completed";
+    camp.completed_at = failed ? null : nowIso();
+    camp.error_message = failed?.error_message || null;
     camp.updated_at = nowIso();
-    s.live = { campaign_id: campaignId, status: "Completed", done, total: camp.total_queries };
-    logEvent("Campaign completed");
+    s.live = {
+      campaign_id: campaignId,
+      status: camp.status,
+      done,
+      total: camp.total_queries,
+      ...(camp.error_message ? { error: camp.error_message } : {}),
+    };
+    logEvent(failed ? `Campaign stopped: ${camp.error_message}` : "Campaign completed", failed ? "ERROR" : "INFO");
     saveStore();
     return s.live;
   }
-  const num = Number(s.settings.RESULTS_PER_QUERY || process.env.RESULTS_PER_QUERY || 10);
+  const numValue = Number(s.settings.RESULTS_PER_QUERY || process.env.RESULTS_PER_QUERY || 10);
+  const num = Number.isFinite(numValue) ? Math.max(1, numValue) : 10;
+  const retryValue = Number(s.settings.RETRY_COUNT || process.env.RETRY_COUNT || 3);
+  const retryLimit = Number.isFinite(retryValue) ? Math.max(1, retryValue) : 3;
   logEvent(`Query ${q.query_text}`);
   try {
     const results = await runSearch(q.query_text, num);
@@ -118,6 +135,7 @@ export async function tickCampaign(campaignId) {
     camp.duplicates += dup;
     camp.updated_at = nowIso();
     camp.status = "Running";
+    camp.error_message = null;
     s.live = {
       campaign_id: campaignId, status: "Running",
       done: camp.completed_queries, total: camp.total_queries,
@@ -128,10 +146,27 @@ export async function tickCampaign(campaignId) {
     q.attempts = (q.attempts || 0) + 1;
     q.error_message = e.message;
     q.last_run_at = nowIso();
-    q.status = e.retryable === false ? "retry" : "retry";
+    const canRetry = e.retryable !== false && q.attempts < retryLimit;
+    q.status = canRetry ? "retry" : "failed";
     camp.updated_at = nowIso();
-    s.live = { campaign_id: campaignId, status: "Running", done, total: camp.total_queries, current_query: q.query_text, error: e.message };
-    logEvent(e.message, "ERROR");
+    if (canRetry) {
+      camp.status = "Running";
+      s.live = { campaign_id: campaignId, status: "Running", done, total: camp.total_queries, current_query: q.query_text, error: e.message, retrying: true };
+      logEvent(`${e.message} (retry ${q.attempts}/${retryLimit})`, "ERROR");
+    } else {
+      camp.status = "Failed";
+      camp.error_message = e.message;
+      s.live = {
+        campaign_id: campaignId,
+        status: "Failed",
+        done,
+        total: camp.total_queries,
+        current_query: q.query_text,
+        error: e.message,
+        retryable: e.retryable !== false,
+      };
+      logEvent(`${e.message}${e.retryable === false ? " (check search provider configuration)" : " (retry limit reached)"}`, "ERROR");
+    }
   }
   saveStore();
   return s.live;

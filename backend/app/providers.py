@@ -1,16 +1,67 @@
 """Modular search providers. Credentials stay on the server."""
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
 import httpx
 
 
+RETRYABLE_STATUSES = {408, 429}
+
+
 class SearchError(Exception):
-    def __init__(self, message: str, retryable: bool = True):
+    def __init__(self, message: str, retryable: bool = True, status: int | None = None, reason: str | None = None):
         super().__init__(message)
         self.retryable = retryable
+        self.status = status
+        self.reason = reason
+
+
+def _compact(value: Any) -> str:
+    return " ".join(str(value or "").split()).strip()[:300]
+
+
+def _error_details(payload: Any, raw: str = "") -> str:
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, str):
+            return _compact(error)
+        if isinstance(error, dict):
+            reasons = [item.get("reason") for item in (error.get("errors") or []) if isinstance(item, dict)]
+            values = [*reasons, error.get("status"), error.get("message")]
+            unique = []
+            for value in values:
+                value = _compact(value)
+                if value and value not in unique:
+                    unique.append(value)
+            return " — ".join(unique)
+        return _compact(payload.get("message"))
+    return _compact(raw)
+
+
+def _provider_error(name: str, status: int, payload: Any = None, raw: str = "") -> SearchError:
+    detail = _error_details(payload, raw)
+    message = f"{name} error {status}"
+    if detail:
+        message += f": {detail}"
+    return SearchError(
+        message,
+        retryable=status in RETRYABLE_STATUSES or status >= 500,
+        status=status,
+        reason=detail or None,
+    )
+
+
+def _response_error(name: str, response: httpx.Response) -> SearchError:
+    raw = response.text
+    payload = None
+    try:
+        payload = json.loads(raw) if raw else None
+    except json.JSONDecodeError:
+        pass
+    return _provider_error(name, response.status_code, payload, raw)
 
 
 class BaseProvider:
@@ -43,13 +94,11 @@ class SerpApiProvider(BaseProvider):
         }
         with httpx.Client(timeout=30) as client:
             r = client.get("https://serpapi.com/search.json", params=params)
-        if r.status_code == 429:
-            raise SearchError("SerpAPI rate limit", retryable=True)
         if r.status_code >= 400:
-            raise SearchError(f"SerpAPI error {r.status_code}: {r.text[:300]}", retryable=r.status_code >= 500)
+            raise _response_error("SerpAPI", r)
         data = r.json()
         if data.get("error"):
-            raise SearchError(str(data["error"]), retryable=True)
+            raise _provider_error("SerpAPI", 400, data)
         out = []
         for i, item in enumerate(data.get("organic_results") or [], start=1):
             out.append({
@@ -75,10 +124,8 @@ class GoogleCseProvider(BaseProvider):
         params = {"key": key, "cx": cx, "q": query, "num": min(num, 10), "gl": "za"}
         with httpx.Client(timeout=30) as client:
             r = client.get("https://www.googleapis.com/customsearch/v1", params=params)
-        if r.status_code == 429:
-            raise SearchError("Google CSE rate limit", retryable=True)
         if r.status_code >= 400:
-            raise SearchError(f"Google CSE error {r.status_code}: {r.text[:300]}", retryable=r.status_code >= 500)
+            raise _response_error("Google CSE", r)
         data = r.json()
         out = []
         for i, item in enumerate(data.get("items") or [], start=1):
@@ -105,10 +152,8 @@ class BraveProvider(BaseProvider):
         params = {"q": query, "count": min(num, 20), "country": "ZA"}
         with httpx.Client(timeout=30) as client:
             r = client.get("https://api.search.brave.com/res/v1/web/search", params=params, headers=headers)
-        if r.status_code == 429:
-            raise SearchError("Brave rate limit", retryable=True)
         if r.status_code >= 400:
-            raise SearchError(f"Brave error {r.status_code}: {r.text[:300]}", retryable=r.status_code >= 500)
+            raise _response_error("Brave", r)
         data = r.json()
         out = []
         for i, item in enumerate((data.get("web") or {}).get("results") or [], start=1):
@@ -135,10 +180,8 @@ class BingProvider(BaseProvider):
         params = {"q": query, "count": min(num, 50), "mkt": "en-ZA"}
         with httpx.Client(timeout=30) as client:
             r = client.get("https://api.bing.microsoft.com/v7.0/search", params=params, headers=headers)
-        if r.status_code == 429:
-            raise SearchError("Bing rate limit", retryable=True)
         if r.status_code >= 400:
-            raise SearchError(f"Bing error {r.status_code}: {r.text[:300]}", retryable=r.status_code >= 500)
+            raise _response_error("Bing", r)
         data = r.json()
         out = []
         for i, item in enumerate((data.get("webPages") or {}).get("value") or [], start=1):

@@ -594,6 +594,7 @@ def get_settings():
         out[k] = rows.get(k, os.getenv(k, ""))
     out["provider"] = provider_status()
     out["api_key_configured"] = bool(os.getenv("SEARCH_API_KEY") or os.getenv("BRAVE_API_KEY") or os.getenv("BING_API_KEY"))
+    out["google_cse_id_configured"] = bool(os.getenv("GOOGLE_CSE_ID"))
     return out
 
 
