@@ -6,7 +6,16 @@ import { api } from "../lib/api";
 export default function Dashboard() {
   const [d, setD] = useState(null);
   useEffect(() => {
-    const load = () => api("/api/dashboard").then(setD).catch(() => {});
+    const load = async () => {
+      try {
+        const dash = await api("/api/dashboard");
+        setD(dash);
+        if (dash.live?.status === "Running" && dash.live.campaign_id) {
+          await api("/api/search/tick", { method: "POST", body: JSON.stringify({ campaign_id: dash.live.campaign_id }) });
+          setD(await api("/api/dashboard"));
+        }
+      } catch {}
+    };
     load();
     const t = setInterval(load, 4000);
     return () => clearInterval(t);

@@ -33,7 +33,20 @@ chmod +x start.sh
 ```
 
 Frontend: http://localhost:3000  
-API: http://localhost:8000/docs
+API: http://localhost:8000/docs (optional local Python). The Next.js app also hosts `/api` so Vercel does not need FastAPI.
+
+## Deploy on Vercel
+
+1. Import this GitHub repo in [Vercel](https://vercel.com/new).
+2. Set **Root Directory** to `frontend`.
+3. Add environment variables (same as `.env.example`):
+   - `SEARCH_PROVIDER` (`serpapi`, `google_cse`, `brave`, or `bing`)
+   - `SEARCH_API_KEY`
+   - `GOOGLE_CSE_ID` (only for Google CSE)
+   - `BRAVE_API_KEY` / `BING_API_KEY` if you use those providers
+4. Deploy.
+
+On Vercel, each search query runs as a serverless function (keep the Search or Dashboard tab open while a campaign is **Running** so the UI can tick the queue). Filesystem storage is ephemeral — **export CSV** to keep leads. For durable storage locally, keep using SQLite via `START.bat`.
 
 ## Search providers
 

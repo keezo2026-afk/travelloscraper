@@ -28,7 +28,16 @@ export default function SearchPage() {
     });
   }, []);
   useEffect(() => {
-    const t = setInterval(() => api("/api/search/live").then(setLive).catch(() => {}), 1500);
+    const t = setInterval(async () => {
+      try {
+        const liveNow = await api("/api/search/live");
+        setLive(liveNow);
+        if (liveNow.status === "Running" && liveNow.campaign_id) {
+          const next = await api("/api/search/tick", { method: "POST", body: JSON.stringify({ campaign_id: liveNow.campaign_id }) });
+          setLive(next);
+        }
+      } catch {}
+    }, 2000);
     return () => clearInterval(t);
   }, []);
 
