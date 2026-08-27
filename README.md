@@ -37,14 +37,20 @@ API: http://localhost:8000/docs (optional local Python). The Next.js app also ho
 
 ## Deploy on Vercel
 
-1. Import this GitHub repo in [Vercel](https://vercel.com/new).
-2. Set **Root Directory** to `frontend`.
-3. Add environment variables (same as `.env.example`):
-   - `SEARCH_PROVIDER` (`serpapi`, `google_cse`, `brave`, or `bing`)
-   - `SEARCH_API_KEY`
-   - `GOOGLE_CSE_ID` (only for Google CSE)
-   - `BRAVE_API_KEY` / `BING_API_KEY` if you use those providers
-4. Deploy.
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/keezo2026-afk/travelloscraper&root-directory=frontend&env=SEARCH_API_KEY&env=SEARCH_PROVIDER&envDescription=Search%20API%20key%20and%20provider%20(serpapi%2C%20google_cse%2C%20brave%2C%20or%20bing)&project-name=travello-lead-finder&repository-name=travelloscraper)
+
+Or import the existing repo:
+
+1. Open [Import keezo2026-afk/travelloscraper](https://vercel.com/new/import?s=https://github.com/keezo2026-afk/travelloscraper).
+2. Set **Root Directory** to `frontend` (required).
+3. Framework Preset: **Next.js**.
+4. Environment variables:
+   - `SEARCH_PROVIDER` — `serpapi` (or `google_cse` / `brave` / `bing`)
+   - `SEARCH_API_KEY` — your key (server-side only, never `NEXT_PUBLIC_`)
+   - `GOOGLE_CSE_ID` — only for Google CSE
+5. Deploy. After the first deploy, Vercel will rebuild on git push.
+
+This Arena sandbox cannot complete Vercel login (outbound TLS to api.vercel.com is blocked), so the GitHub ↔ Vercel connection has to be done in your browser.
 
 On Vercel, each search query runs as a serverless function (keep the Search or Dashboard tab open while a campaign is **Running** so the UI can tick the queue). Filesystem storage is ephemeral — **export CSV** to keep leads. For durable storage locally, keep using SQLite via `START.bat`.
 
